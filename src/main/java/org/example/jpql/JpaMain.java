@@ -12,12 +12,21 @@ public class JpaMain {
         tx.begin();
 
         try {
-            for(int i = 0; i < 100; i++){
-                Member member = new Member();
-                member.setUsername("member" + i);
-                member.setAge(i);
-                em.persist(member);
-            }
+
+            Team team = new Team();
+            team.setName("teamA");
+            em.persist(team);
+
+            Member member = new Member();
+            member.setUsername("관리자");
+            member.setAge(10);
+            member.setTeam(team);
+            member.setType(MemberType.ADMIN);
+            em.persist(member);
+
+
+
+
 
             /*
             TypedQuery<Member> query = em.createQuery("select m from Member m", Member.class); //Entity 형식으로 받을 시
@@ -100,8 +109,15 @@ public class JpaMain {
             System.out.println("memberDTO.getUsername() = " + memberDTO.getUsername());
             System.out.println("memberDTO.getAge() = " + memberDTO.getAge());
 
-            */
-
+            //페이징 처리
+            for(int i = 0; i < 100; i++){
+                Member member = new Member();
+                member.setUsername("member" + i);
+                member.setAge(i);
+                em.persist(member);
+            }
+            //페이징 처리 setFirstResult(), setMaxResults()로 공통으로 모든 DB처리 가능 이유로는 persistence.xml dialect 방언처리로
+            //상황에 맞게 DB SQL을 전송함
             List<Member> result = em.createQuery("select m from Member m order by m.age desc", Member.class)
                     .setFirstResult(1)
                     .setMaxResults(10)
@@ -110,6 +126,103 @@ public class JpaMain {
             System.out.println("result = " + result.size());
             for (Member member1 : result) {
                 System.out.println("member1 = " + member1);
+            }
+
+            //내부조인 inner join inner 생략 가능
+            String query = "select m from Member m inner join m.team t";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+
+            //외부조인 left join outer 생략 가능
+            String query = "select m from Member m left outer join m.team t";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+
+            //세타조인 관계 없는 데이터를 크로스해서 조인
+            String query = "select m from Member m, Team t where m.username=t.name";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+
+            //조인 조건문에 추가 할 수 있음 on절을 통해 Member 와 team을 조인 teamA인 것만 조인
+            String query = "select m from Member m left join m.team t on t.name = 'teamA' ";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+
+            //연관 관계 없는 엔티티 외부 조인
+            //예) 회원의 이름과 팀의 이름이 같은 대상 외부 조인
+            String query = "select m from Member m left join Team t on m.username = t.name";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+            //연관 관계 없는 내부 조인
+            String query = "select m from Member m join Team t on m.username = t.name";
+            List<Member> result = em.createQuery(query, Member.class)
+                    .getResultList();
+
+            //enum인 경우 패키지를 다적어줘야함, 파라미터로 넣을경우 이렇게 안해도 됨
+            String query = "select m.username, 'HELLO', TRUE  from Member m " +
+                    "where m.type = org.example.jpql.MemberType.USER";
+            List<Object[]> result = em.createQuery(query)
+                    .getResultList();
+
+            for (Object[] objects : result) {
+                System.out.println("objects[0] = " + objects[0]);
+                System.out.println("objects[1] = " + objects[1]);
+                System.out.println("objects[2] = " + objects[2]);
+            }
+
+            //다형성 형태로 불러올 수도 있음 상속관계에서 Dtype을 챙겨 줌
+            em.createQuery("select i from Item i where type(i) = BOOK", Item.class);
+
+            //기본 CASE식
+            String query =
+                    "select " +
+                            "case when m.age <= 10 then '학생요금'" +
+                            "     when m.age <= 60 then '경로요금'" +
+                            "     else '일반요금' end " +
+                            "from Member m";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
+            }
+
+            //COALESCE : 하나씩 조회해서 null이 아니면 반환
+            String query = "select coalesce(m.username, '이름 없는 회원') from Member m ";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
+            }
+
+            //nullif 해당 값과 설정된 값이 같으면 NULL반환
+            String query = "select nullif(m.username, '관리자') from Member m ";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
+            }
+
+            //concat등 함수들은 참조 할것
+            String query = "select 'a' || 'b' from Member m ";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
+            }
+            //만든 펑션 사용
+            String query = "select function('group_concat', m.username) from Member m ";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
+            }
+
+            */
+            String query = "select group_concat(m.username) from Member m ";
+            List<String> result = em.createQuery(query, String.class).getResultList();
+
+            for (String s : result) {
+                System.out.println("s = " + s);
             }
 
             em.flush();
