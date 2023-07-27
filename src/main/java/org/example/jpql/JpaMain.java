@@ -1,6 +1,7 @@
 package org.example.jpql;
 
 import javax.persistence.*;
+import java.util.Collection;
 import java.util.List;
 
 public class JpaMain {
@@ -13,19 +14,28 @@ public class JpaMain {
 
         try {
 
-            Team team = new Team();
-            team.setName("teamA");
-            em.persist(team);
+            Team teamA = new Team();
+            teamA.setName("팀A");
+            em.persist(teamA);
 
-            Member member = new Member();
-            member.setUsername("관리자");
-            member.setAge(10);
-            member.setTeam(team);
-            member.setType(MemberType.ADMIN);
-            em.persist(member);
+            Team teamB = new Team();
+            teamB.setName("팀A");
+            em.persist(teamB);
 
+            Member member1 = new Member();
+            member1.setUsername("회원1");
+            member1.setTeam(teamA);
+            em.persist(member1);
 
+            Member member2 = new Member();
+            member2.setUsername("회원2");
+            member2.setTeam(teamA);
+            em.persist(member2);
 
+            Member member3 = new Member();
+            member3.setUsername("회원3");
+            member3.setTeam(teamB);
+            em.persist(member3);
 
 
             /*
@@ -216,15 +226,91 @@ public class JpaMain {
             for (String s : result) {
                 System.out.println("s = " + s);
             }
+            //경로표현식으로 인한 탐색은 자제 묵시적 조인이 일어나서 JOIN이 원하지 않게 계속 이루어 질 수 있음
+            //JOIN은 성능에도 영향을 끼치기 때문에 명시적 조인을 통해 직접 join을 작성하는 것을 권장
+            String query = "select t.members  from Team t ";
+            List result = em.createQuery(query, Collection.class).getResultList();
 
-            */
-            String query = "select group_concat(m.username) from Member m ";
-            List<String> result = em.createQuery(query, String.class).getResultList();
-
-            for (String s : result) {
-                System.out.println("s = " + s);
+            for (Object o : result) {
+                System.out.println("o = " + o);
             }
 
+            //N+1 해결 방법으로는 1번의 호출시 다른테이블값의 N만큼 쿼리가 호출된다는 의미
+            //지연로딩으로 인해 해당부분이 필요한 시점에 루프가 돌때 참조된 값 조회시
+            //쿼리가 매번 날라가는 이슈가 발생함 이를 방지하기 위해 fetch를 붙여 패치조인으로
+            //한번에 영속성 컨텍스트에 올리고 1차캐시로 값을 조회함 이방법을 사용시 프록시형태로 조회하지 않음
+
+            String query = "select m From Member m join fetch m.team";
+
+            List<Member> result = em.createQuery(query, Member.class).getResultList();
+
+            for (Member member : result) {
+                System.out.println("member = " + member.getUsername() + ", " + member.getTeam().getName());
+                //회원1, 팀A(SQL)
+                //회원2, 팀A(1차캐시)
+                //회원3, 팀B(SQL)
+            }
+            //패치 조인
+            //
+            //일반적으로 연관관계는 즉시로딩으로 설정하지않고 지연 로딩으로 설정해야함
+            //이유로는 필요치 않게 데이터들을 조인하여서 가져올 수 있는 이슈가 있기때문임
+            //그렇지만 지연로딩으로 설정할 시 컬렉션 값을 로드 할시 N + 1 이슈가 발생함
+            //N+1이란 쿼리 한번에 거기에 연관되어있는 Many수만큼 쿼리가 동작한다는 소리임
+            //그렇기때문에 필요한부분에는 join fetch를 사용하여 한번에 즉시로딩으로 데이터를 조회하여
+            //영속성 컨텍스트에 1차캐시로  데이터를 저장하면 N+1문제가 해결 될 수 있음
+
+            //1대 다인 경우 데이터 뻥튀기기가 될 수 있기때문에 패치조인과 distinct를 붙여서 방지해야함
+            //패치조인으로 인한 탐색은 전체 데이터를 객체그래프로 탐색하는데 초점을 둬야함 데이터를 줄이고 이런 행위를 하면 장애여부 증가
+            // .setFirstResult()
+            // .setMaxResults() 페이징 처리 지원 x
+            //필요한 경우 다대일인 쿼리 형태로 바꿔서 페이징처리를 하던지 아니면 @OneToMany나 @ManyToMany에
+            //@BatchSize()를 통해 id값으로 한번에 조회 하는 방법을 사용하던지
+            //<property name="hibernate.default_batch_fetch_size" value=""/>를 xml에 처리하여 해결
+            String query = "select distinct t From Team t join fetch t.members";
+
+            List<Team> result = em.createQuery(query, Team.class)
+                    .getResultList();
+
+            for (Team team : result) {
+                System.out.println("team = " + team.getName() + " " + team.getMembers().size());
+                for(Member member : team.getMembers()){
+                    System.out.println("member = " + member);
+                }
+            }
+
+            String query = "select i from Item i where type(i) = 'BOOK'"; //Dtype조회
+            String query1 = "select i from Item i where treat(i as BOOK).auther='shin'"; //이런형태로 부모에서 자식으로 다운캐스팅해서 사용 할 수 있음
+
+            //JPA는 변수로 엔티티를 넣을수있음 넣으면 고정으로 식별자 key로 m.id로 조회 됨
+            //외래키로 조회도 가능함
+            String query = "select m From Member m where m = :member";
+
+            Member findMember = em.createQuery(query, Member.class)
+                    .setParameter("member", member1)
+                    .getSingleResult();
+
+            System.out.println("findMember = " + findMember);
+
+            //named Query 쿼리를 xml이나 entity에 미리 생성해놓고 사용 할 수 있음
+            //또한 좋은오류 컴파일할때 오류가 발생하여 클라이언트가 요청시 오류가 나는것을 미리 예방 할 수 있음
+            List<Member> resultList = em.createNamedQuery("Member.findByUsername", Member.class)
+                    .setParameter("username", "회원1")
+                    .getResultList();
+
+            for (Member member : resultList) {
+                System.out.println("member = " + member);
+            }
+
+            //벌크연산은 한번에 업데이트하거나 삭제할때 사용됨
+            //주의해야될점은 영속성 컨텍스트를 적용해주지 않기때문에 업데이트나 삭제처리후에
+            //엔티티매니저를 clear 해줘야함 아니면 업데이트한 값이아니라 기존에 있는 값이 캐시에있어서 문제가 발생 할수있음
+            //다른방법으로는 벌크연산을 최초에 실행하는 방법이 있음
+            int resultCount = em.createQuery("update Member m set m.age = 20")
+                    .executeUpdate();
+
+            System.out.println("resultCount = " + resultCount);
+
+            */
             em.flush();
             em.clear();
 
